@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
@@ -23,46 +24,61 @@ func check(e error) {
 		panic(e)
 	}
 }
+
 func main() {
 	db, err := sql.Open("mysql", "urladmin:admin123@/urlshortnr")
 	check(err)
 	defer db.Close()
-	tx, err := db.Begin()
 
+	tx, err := db.Begin()
 	check(err)
-	check(db.Ping())
 	defer tx.Rollback()
-	for data := range ["https://google.fr", "https://youtube.com"] {
-		insert(tx, data)
-	}
+
+	check(db.Ping())
+	insert_url(tx, "https://google.fr")
 
 	// var hashedURL string
 
-	data, err := tx.Prepare("SELECT url FROM storage WHERE url = ?")
+	rows, err := db.Query("SELECT * FROM storage")
 	check(err)
-
-	defer data.Close()
-	results, _ := data.Exec("https://github.com")
-	if err := tx.Commit(); err != nil {
-		log.Fatal(err)
+	columns, err := rows.Columns()
+	check(err)
+	values := make([]sql.RawBytes, len(columns))
+	scanArgs := make([]interface{}, len(values))
+	for i := range values {
+		scanArgs[i] = &values[i]
 	}
-	fmt.Println(results)
-	// db.SetConnMaxLifetime(time.Minute * 3)
-	// db.SetMaxOpenConns(10)
-	// db.SetMaxIdleConns(10)
 
-	// r := mux.NewRouter()
-	// r.HandleFunc("/articles/{category}/{id:[0-9]+}", ArticleHandler)
-	// srv := &http.Server{
-	// 	Handler:      r,
-	// 	Addr:         "127.0.0.1:8000",
-	// 	WriteTimeout: 15 * time.Second,
-	// 	ReadTimeout:  15 * time.Second,
-	// }
-	// log.Fatal(srv.ListenAndServe())
+	// Fetch rows
+	for rows.Next() {
+		// get RawBytes from data
+		err = rows.Scan(scanArgs...)
+		if err != nil {
+			panic(err.Error()) // proper error handling instead of panic in your app
+		}
+
+		// Now do something with the data.
+		// Here we just print each column as a string.
+		var value string
+		for i, col := range values {
+			// Here we can check if the value is nil (NULL value)
+			if col == nil {
+				value = "NULL"
+			} else {
+				value = string(col)
+			}
+			fmt.Println(columns[i], ": ", value)
+		}
+		fmt.Println("-----------------------------------")
+	}
+	if err = rows.Err(); err != nil {
+		panic(err.Error()) // proper error handling instead of panic in your app
+	}
+
+	serve()
 }
 
-func insert(db *sql.Tx, data string) {
+func insert_url(db *sql.Tx, data string) {
 	insertCursor, err := db.Prepare("INSERT INTO storage VALUES( url, ? )")
 	check(err)
 	insertCursor.Exec(data)
@@ -71,4 +87,16 @@ func insert(db *sql.Tx, data string) {
 	} else {
 		log.Println(fmt.Sprintf("%s inserted in db", data))
 	}
+}
+
+func serve() {
+	r := mux.NewRouter()
+	r.HandleFunc("/articles/{category}/{id:[0-9]+}", ArticleHandler)
+	srv := &http.Server{
+		Handler:      r,
+		Addr:         "127.0.0.1:8000",
+		WriteTimeout: 15 * time.Second,
+		ReadTimeout:  15 * time.Second,
+	}
+	log.Fatal(srv.ListenAndServe())
 }
