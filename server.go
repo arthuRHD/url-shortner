@@ -7,8 +7,9 @@ import (
 	"net/http"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	// _ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
 )
 
 // ArticleHandler is an API endpoint
@@ -21,70 +22,39 @@ func ArticleHandler(w http.ResponseWriter, r *http.Request) {
 
 func check(e error) {
 	if e != nil {
-		panic(e)
+		log.Fatal(e)
 	}
 }
 
 func main() {
-	db, err := sql.Open("mysql", "urladmin:admin123@/urlshortnr")
-	check(err)
+	db := pgDB()
 	defer db.Close()
 
+	check(db.Ping())
 	tx, err := db.Begin()
 	check(err)
 	defer tx.Rollback()
 
-	check(db.Ping())
-	insert_url(tx, "https://google.fr")
-
-	// var hashedURL string
-
-	rows, err := db.Query("SELECT * FROM storage")
-	check(err)
-	columns, err := rows.Columns()
-	check(err)
-	values := make([]sql.RawBytes, len(columns))
-	scanArgs := make([]interface{}, len(values))
-	for i := range values {
-		scanArgs[i] = &values[i]
-	}
-
-	// Fetch rows
-	for rows.Next() {
-		// get RawBytes from data
-		err = rows.Scan(scanArgs...)
-		if err != nil {
-			panic(err.Error()) // proper error handling instead of panic in your app
-		}
-
-		// Now do something with the data.
-		// Here we just print each column as a string.
-		var value string
-		for i, col := range values {
-			// Here we can check if the value is nil (NULL value)
-			if col == nil {
-				value = "NULL"
-			} else {
-				value = string(col)
-			}
-			fmt.Println(columns[i], ": ", value)
-		}
-		fmt.Println("-----------------------------------")
-	}
-	if err = rows.Err(); err != nil {
-		panic(err.Error()) // proper error handling instead of panic in your app
-	}
-
-	serve()
+	fetchAll(db, "SELECT * FROM web_url;")
+	log.Println("ça marche")
+	insertURL(tx, "https://.fr")
+	time.Sleep(time.Second * 5)
+	fetchAll(db, "SELECT * FROM web_url;")
 }
 
-func insert_url(db *sql.Tx, data string) {
-	insertCursor, err := db.Prepare("INSERT INTO storage VALUES( url, ? )")
-	check(err)
-	insertCursor.Exec(data)
-	if err := db.Commit(); err != nil {
+func insertURL(db *sql.Tx, data string) {
+	log.Println("ça marche")
+	query := "INSERT INTO web_url (URL) VALUES ( ? );"
+	log.Println(query)
+	stmt, err := db.Prepare(query)
+	log.Println("ça marche")
+	if err != nil {
 		log.Fatal(err)
 	} else {
+		defer stmt.Close()
+		log.Println("ça marche")
+		_, err := stmt.Exec(data)
+		check(err)
 		log.Println(fmt.Sprintf("%s inserted in db", data))
 	}
 }
@@ -99,4 +69,40 @@ func serve() {
 		ReadTimeout:  15 * time.Second,
 	}
 	log.Fatal(srv.ListenAndServe())
+}
+
+func fetchAll(db *sql.DB, query string) {
+	var (
+		url string
+		id  int
+	)
+	rows, err := db.Query(query)
+	check(err)
+	defer rows.Close()
+	for rows.Next() {
+		check(rows.Scan(&id, &url))
+		log.Println(id, url)
+	}
+}
+
+func mysqlDB() *sql.DB {
+	db, err := sql.Open("mysql", "urladmin:admin123@/urlshortnr")
+	check(err)
+	return db
+}
+
+func pgDB() *sql.DB {
+	const (
+		host     = "127.0.0.1"
+		port     = 5432
+		user     = "bberenger"
+		password = "cesi2021"
+		dbname   = "mydb"
+	)
+	connectionString := fmt.Sprintf("host=%s port=%d user=%s "+
+		"password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	db, err := sql.Open("postgres", connectionString)
+	check(err)
+	return db
 }
