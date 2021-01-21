@@ -1,0 +1,22 @@
+services:
+  postgres:
+    build: ./db
+    container_name: postgres-local
+    ports:
+      - "5432:5432"
+    volumes:
+      - ~/.postgres-data:/var/lib/postgresql/data
+    environment: 
+      - POSTGRES_PASSWORD=MdpTrèsSécu
+    links:
+      - postgres_admin
+
+  postgres_admin:
+    image: dpage/pgadmin4
+    container_name: pgadmin
+    ports: 
+      - "80:80"
+    environment: 
+      - PGADMIN_DEFAULT_EMAIL=bberenger@cesi.fr
+      - PGADMIN_DEFAULT_PASSWORD=cesi2021
+    

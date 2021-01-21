@@ -5,63 +5,65 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 	"time"
+	"./db"
 
-	// _ "github.com/go-sql-driver/mysql"
+	_ "github.com/go-sql-driver/mysql"
 	"github.com/gorilla/mux"
+	"github.com/kare/base62"
 	_ "github.com/lib/pq"
 )
 
-// ArticleHandler is an API endpoint
-func ArticleHandler(w http.ResponseWriter, r *http.Request) {
+func encodeRoute(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	w.WriteHeader(http.StatusOK)
-	fmt.Fprintf(w, "Category: %v\n", vars["category"])
-	fmt.Fprintf(w, "ID: %v\n", vars["id"])
+	rawURL := vars["rawURL"]
+	encodedURL, _ := base62.Decode(rawURL)
+	cursor := db.Conn("postgres")
+	check(cursor.Ping())
+	_, err := cursor.Query(fmt.Sprintf("INSERT INTO web_url (URL) VALUES ( '%s' );", encodedURL))
+	check(err)
+	cursor.Close()
 }
 
-func check(e error) {
-	if e != nil {
-		log.Fatal(e)
+func decodeRoute(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	w.WriteHeader(http.StatusOK)
+	encodedURL, _ := strconv.ParseInt(vars["encodedURL"], 62, 64)
+	rawURL := base62.Encode(encodedURL)
+	http.Redirect(w, r, rawURL, http.StatusFound)
+	log.Println(encodedURL)
+	cursor := db.Conn("postgres")
+	check(cursor.Ping())
+	rows, err := cursor.Query("SELECT * FROM web_url;")
+	check(err)
+	results := fetch(rows)
+	for _, result := range results {
+		log.Println(fmt.Sprintf("%v : %s", result.id, result.url))
 	}
+	_ = cursor.Close()
 }
 
 func main() {
-	db := pgDB()
-	defer db.Close()
-
-	check(db.Ping())
-	tx, err := db.Begin()
-	check(err)
-	defer tx.Rollback()
-
-	fetchAll(db, "SELECT * FROM web_url;")
-	log.Println("ça marche")
-	insertURL(tx, "https://.fr")
-	time.Sleep(time.Second * 5)
-	fetchAll(db, "SELECT * FROM web_url;")
+	serve()
 }
 
-func insertURL(db *sql.Tx, data string) {
-	log.Println("ça marche")
-	query := "INSERT INTO web_url (URL) VALUES ( ? );"
-	log.Println(query)
-	stmt, err := db.Prepare(query)
-	log.Println("ça marche")
+func insertURL(tx *sql.Tx, data string) {
+	stmt, err := tx.Prepare("INSERT INTO web_url VALUES (?);")
 	if err != nil {
 		log.Fatal(err)
 	} else {
-		defer stmt.Close()
-		log.Println("ça marche")
 		_, err := stmt.Exec(data)
 		check(err)
-		log.Println(fmt.Sprintf("%s inserted in db", data))
+		log.Println(fmt.Sprintf("%s inserted in tx", data))
 	}
 }
 
 func serve() {
 	r := mux.NewRouter()
-	r.HandleFunc("/articles/{category}/{id:[0-9]+}", ArticleHandler)
+	r.HandleFunc("/{encodedURL}", decodeRoute).Methods("GET")
+	r.HandleFunc("encode/{rawURL}", encodeRoute)
 	srv := &http.Server{
 		Handler:      r,
 		Addr:         "127.0.0.1:8000",
@@ -71,38 +73,15 @@ func serve() {
 	log.Fatal(srv.ListenAndServe())
 }
 
-func fetchAll(db *sql.DB, query string) {
-	var (
-		url string
-		id  int
-	)
-	rows, err := db.Query(query)
-	check(err)
-	defer rows.Close()
-	for rows.Next() {
-		check(rows.Scan(&id, &url))
-		log.Println(id, url)
+
+
+type webURL struct {
+	id  int
+	url string
+}
+
+func check(e error) {
+	if e != nil {
+		log.Fatal(e)
 	}
-}
-
-func mysqlDB() *sql.DB {
-	db, err := sql.Open("mysql", "urladmin:admin123@/urlshortnr")
-	check(err)
-	return db
-}
-
-func pgDB() *sql.DB {
-	const (
-		host     = "127.0.0.1"
-		port     = 5432
-		user     = "bberenger"
-		password = "cesi2021"
-		dbname   = "mydb"
-	)
-	connectionString := fmt.Sprintf("host=%s port=%d user=%s "+
-		"password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
-	db, err := sql.Open("postgres", connectionString)
-	check(err)
-	return db
 }
