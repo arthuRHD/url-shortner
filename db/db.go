@@ -13,7 +13,7 @@ func Conn(sgbd string) *sql.DB {
 	} else if sgbd == "postgres" {
 		connStr = fmt.Sprintf("host=%s port=%d user=%s "+
 			"password=%s dbname=%s sslmode=disable",
-			"127.0.0.1", 5432, "bberenger", "cesi2021", "mydb")
+			"127.0.0.1", 5432, "arichard", "admin123", "mydb")
 	} else {
 		log.Fatal(connStr)
 	}
