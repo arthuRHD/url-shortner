@@ -17,6 +17,6 @@ services:
     ports: 
       - "80:80"
     environment: 
-      - PGADMIN_DEFAULT_EMAIL=bberenger@cesi.fr
-      - PGADMIN_DEFAULT_PASSWORD=cesi2021
+      - PGADMIN_DEFAULT_EMAIL=arthur.richard@protonmail.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
     
